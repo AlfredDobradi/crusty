@@ -75,7 +75,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "crusty-proxy"
+name = "crusty-lb"
 version = "0.1.0"
 dependencies = [
  "clap",

@@ -1,9 +1,7 @@
 use clap::{arg, command, Parser};
 use std::collections::HashMap;
-use std::io::Read;
-use std::io::Write;
 use std::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt};
 use tokio::net::TcpListener;
 
 #[derive(Clone, Debug)]
@@ -167,15 +165,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // }
             }
         });
-    }
-}
-
-async fn check_targets(targets: Vec<&str>, millis: i32) {
-    loop {
-        for target in &targets {
-
-            println!("checking {}", target);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(millis.try_into().unwrap()));
     }
 }
