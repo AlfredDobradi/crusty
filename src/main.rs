@@ -2,6 +2,7 @@ use clap::{arg, command, Parser};
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt,AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -11,6 +12,7 @@ enum TargetStatus {
     Alive,
     Dead
 }
+
 
 #[derive(Parser, Debug)]
 #[command(author="Alfred Dobradi <alfreddobradi@gmail.com>", version="0.0.1", about=None, long_about=None)]
@@ -82,12 +84,12 @@ impl TargetMap {
         Ok(())
     }
 
-    // fn pick(&self) -> String {
-    //     match self.targets.keys().nth(0) {
-    //         Some(str) => str.to_string(),
-    //         _ => String::from("")
-    //     }
-    // }
+    fn pick(&self) -> String {
+        match self.targets.keys().nth(0) {
+            Some(str) => str.to_string(),
+            _ => String::from("")
+        }
+    }
 }
 
 #[tokio::main]
@@ -99,13 +101,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Bind address: {:?}", args.bind_address);
     println!("Bind port: {:?}", args.bind_port);
 
-    let mut targets = TargetMap::from(args.targets);
+    let mut targets = Arc::new(Mutex::new(TargetMap::from(args.targets)));
     
-    println!("Targets: {:?}", targets.targets);
-
+    // println!("Targets: {:?}", targets.targets);
+    let t = targets.clone();
     tokio::spawn(async move {
         loop {
-            match targets.check().await {
+            let t = t.lock().unwrap();
+            match t.check().await {
                 Ok(_) => {
                     println!("All checks successful");
                 },
@@ -122,11 +125,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
-
     loop {
         let (mut socket, address) = listener.accept().await?;
 
+        let targets_pick = targets.clone();
         tokio::spawn(async move {
+            let target = targets_pick.lock().unwrap().pick();
             println!("{}", address.to_string());
 
             let mut buf = [0; 1024];
