@@ -105,24 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // println!("Targets: {:?}", targets.targets);
     let t = targets.clone();
-    tokio::spawn(async move {
-        loop {
-            let t = t.lock().unwrap();
-            match t.check().await {
-                Ok(_) => {
-                    println!("All checks successful");
-                },
-                Err(failed_targets) => {
-                    println!("These targets have failed their checks:");
-                    for target in failed_targets {
-                        println!("\t{}", target);
-                    }
-                },
-            }
-
-            std::thread::sleep(std::time::Duration::from_millis(30000));
-        }
-    });
+    target_checker(t.clone());
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
     loop {
@@ -179,4 +162,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+}
+
+fn target_checker(targets: Arc<Mutex<TargetMap>>) {
+    tokio::spawn(async move {
+        loop {
+            let t = targets.lock().unwrap();
+            match t.check().await {
+                Ok(_) => {
+                    println!("All checks successful");
+                },
+                Err(failed_targets) => {
+                    println!("These targets have failed their checks:");
+                    for target in failed_targets {
+                        println!("\t{}", target);
+                    }
+                },
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(30000));
+        }
+    });
 }
