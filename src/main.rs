@@ -1,7 +1,8 @@
 use clap::{arg, command, Parser};
 use std::collections::HashMap;
 use std::net::TcpStream;
-use tokio::io::{AsyncReadExt};
+use std::io::{Read, Write};
+use tokio::io::{AsyncReadExt,AsyncWriteExt};
 use tokio::net::TcpListener;
 
 #[derive(Clone, Debug)]
@@ -57,7 +58,7 @@ impl TargetMap {
         let mut failed: Vec<&str> = Vec::new();
         for (target, status) in self.targets.iter_mut() {
             let stream = TcpStream::connect(target);
-            let mut new_status = TargetStatus::Unknown;
+            let new_status;
             match stream {
                 Ok(str) => {
                     if let Err(_) = str.shutdown(std::net::Shutdown::Both) {
@@ -80,6 +81,13 @@ impl TargetMap {
         }
         Ok(())
     }
+
+    // fn pick(&self) -> String {
+    //     match self.targets.keys().nth(0) {
+    //         Some(str) => str.to_string(),
+    //         _ => String::from("")
+    //     }
+    // }
 }
 
 #[tokio::main]
@@ -109,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(1000));
+            std::thread::sleep(std::time::Duration::from_millis(30000));
         }
     });
 
@@ -118,8 +126,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (mut socket, address) = listener.accept().await?;
 
-        println!("{}", address.to_string());
         tokio::spawn(async move {
+            println!("{}", address.to_string());
+
             let mut buf = [0; 1024];
 
             // In a loop, read data from the socket and write the data back.
@@ -134,35 +143,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                // let mut b: [u8; 1024] = [0; 1024];
-                // let stream = TcpStream::connect("127.0.0.1:33445");
-                // match stream {
-                //     Ok(mut str) => {
-                //         let res = str.write(&buf[0..n]);
-                //         match res {
-                //             Ok(_) => {
-                //                 if let Err(read_error) = str.read(&mut b[0..n]) {
-                //                     eprintln!("failed to read destination reply: {:?}", read_error);
-                //                     return;
-                //                 }
-                //             }
-                //             Err(e) => {
-                //                 eprintln!("failed to write data: {:?}", e);
-                //                 return;
-                //             }
-                //         }
-                //     }
-                //     Err(e) => {
-                //         eprintln!("failed to connect to destination: {:?}", e);
-                //         return;
-                //     }
-                // }
+                let mut b: [u8; 1024] = [0; 1024];
+                let stream = TcpStream::connect("127.0.0.1:8888");
+                match stream {
+                    Ok(mut str) => {
+                        let res = str.write(&buf[0..n]);
+                        match res {
+                            Ok(_) => {
+                                if let Err(read_error) = str.read(&mut b[0..n]) {
+                                    eprintln!("failed to read destination reply: {:?}", read_error);
+                                    return;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("failed to write data: {:?}", e);
+                                return;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("failed to connect to destination: {:?}", e);
+                        return;
+                    }
+                }
 
-                // // Write the data back
-                // if let Err(e) = socket.write_all(&b[0..n]).await {
-                //     eprintln!("failed to write to socket; err = {:?}", e);
-                //     return;
-                // }
+                // Write the data back
+                if let Err(e) = socket.write_all(&b[0..n]).await {
+                    eprintln!("failed to write to socket; err = {:?}", e);
+                    return;
+                }
             }
         });
     }
