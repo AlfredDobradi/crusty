@@ -9,3 +9,4 @@ edition = "2021"
 tokio = { version = "1.0.0", features = ["full"] }
 clap = {version = "4.0", features = ["env", "derive"] }
 rand = "0.8.5"
+parse_duration = "2.1.1"

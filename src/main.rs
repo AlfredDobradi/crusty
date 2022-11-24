@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt,AsyncWriteExt};
 use tokio::net::TcpListener;
 use rand::Rng;
+use parse_duration::parse;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TargetStatus {
@@ -35,6 +36,9 @@ struct Args {
 
     #[arg(short=None, long="targets", env="CRUSTY_TARGETS", required=true)]
     targets: String,
+
+    #[arg(short='i', long="interval")]
+    interval: String,
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +82,7 @@ impl TargetMap {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // let mut clientMap: HashMap< = HashMap::new()
+    let dur = parse(args.interval.as_str()).unwrap();
 
     println!("Bind address: {:?}", args.bind_address);
     println!("Bind port: {:?}", args.bind_port);
@@ -100,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(30000));
+            std::thread::sleep(dur);
         }
     });
 
