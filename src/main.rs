@@ -2,10 +2,13 @@ use clap::{arg, command, Parser};
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt,AsyncWriteExt};
 use tokio::net::TcpListener;
+use rand::Rng;
+use parse_duration::parse;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum TargetStatus {
     Unknown,
     Alive,
@@ -33,6 +36,9 @@ struct Args {
 
     #[arg(short=None, long="targets", env="CRUSTY_TARGETS", required=true)]
     targets: String,
+
+    #[arg(short='i', long="interval")]
+    interval: String,
 }
 
 #[derive(Clone, Debug)]
@@ -54,58 +60,39 @@ impl TargetMap {
         }
     }
 
-    async fn check(&mut self) -> Result<(), Vec<&str>> {
-        let mut failed: Vec<&str> = Vec::new();
-        for (target, status) in self.targets.iter_mut() {
-            let stream = TcpStream::connect(target);
-            let new_status;
-            match stream {
-                Ok(str) => {
-                    if let Err(_) = str.shutdown(std::net::Shutdown::Both) {
-                        failed.push(target.as_str());
-                        new_status = TargetStatus::Dead;
-                    } else {
-                        new_status = TargetStatus::Alive;
-                    }
-                }
-                Err(_) => {
-                    failed.push(target.as_str());
-                    new_status = TargetStatus::Dead;
-                }
-            }
-            *status = new_status;
-        }
+    fn pick(&self) -> Result<String, String> {
+        let mut live_targets = self.targets.clone();
+        live_targets.retain(|_, v| *v == TargetStatus::Alive);
 
-        if failed.len() > 0 {
-            return Err(failed);
+        let len = live_targets.len();
+        if len == 0 {
+            return Err(String::from("No live targets"));
         }
-        Ok(())
+        let mut rng = rand::thread_rng();
+        let n = rng.gen_range(0..len);
+
+        match live_targets.keys().nth(n) {
+            Some(str) => Ok(str.to_string()),
+            _ => Err(String::from("Something went wrong"))
+        }
     }
-
-    // fn pick(&self) -> String {
-    //     match self.targets.keys().nth(0) {
-    //         Some(str) => str.to_string(),
-    //         _ => String::from("")
-    //     }
-    // }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // let mut clientMap: HashMap< = HashMap::new()
+    let dur = parse(args.interval.as_str()).unwrap();
 
     println!("Bind address: {:?}", args.bind_address);
     println!("Bind port: {:?}", args.bind_port);
 
-    let mut targets = TargetMap::from(args.targets);
+    let targets = Arc::new(Mutex::new(TargetMap::from(args.targets)));
     
-    println!("Targets: {:?}", targets.targets);
-
+    let tt = targets.clone();
     tokio::spawn(async move {
         loop {
-            match targets.check().await {
+            match check(&tt).await {
                 Ok(_) => {
                     println!("All checks successful");
                 },
@@ -117,17 +104,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(30000));
+            std::thread::sleep(dur);
         }
     });
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
-
     loop {
         let (mut socket, address) = listener.accept().await?;
 
+        let targets_pick = targets.clone();
         tokio::spawn(async move {
-            println!("{}", address.to_string());
+            let target = match targets_pick.lock().unwrap().pick() {
+                Ok(tt) => tt,
+                Err(error) => {
+                    eprintln!("error picking target: {}", error);
+                    return;
+                }
+            };
+            println!("Target: {}", target);
+            println!("Source: {}", address.to_string());
 
             let mut buf = [0; 1024];
 
@@ -144,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 let mut b: [u8; 1024] = [0; 1024];
-                let stream = TcpStream::connect("127.0.0.1:8888");
+                let stream = TcpStream::connect(&target);
                 match stream {
                     Ok(mut str) => {
                         let res = str.write(&buf[0..n]);
@@ -175,4 +170,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+}
+
+async fn check(targets: &Arc<Mutex<TargetMap>>) -> Result<(), Vec<String>> {
+    let mut failed: Vec<String> = Vec::new();
+    let mut targets = targets.lock().unwrap();
+    for (target, status) in targets.targets.iter_mut() {
+        let stream = TcpStream::connect(target);
+        let new_status;
+        match stream {
+            Ok(str) => {
+                if let Err(_) = str.shutdown(std::net::Shutdown::Both) {
+                    failed.push(target.to_string());
+                    new_status = TargetStatus::Dead;
+                } else {
+                    new_status = TargetStatus::Alive;
+                }
+            }
+            Err(_) => {
+                failed.push(target.to_string());
+                new_status = TargetStatus::Dead;
+            }
+        }
+        *status = new_status;
+    }
+
+    if failed.len() > 0 {
+        return Err(failed);
+    }
+    Ok(())
 }
